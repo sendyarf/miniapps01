@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Channel List Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            overscroll-behavior: none;
+            -webkit-overflow-scrolling: touch;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: #f3f4f6;
+        }
+        #channel-iframe {
+            min-height: 50vh;
+            max-height: 80vh;
+            background: white;
+        }
+        @media (max-width: 640px) {
+            #channel-iframe {
+                height: calc(100vh - 180px);
+            }
+        }
+        .container {
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-4 max-w-screen-md">
+        <h1 class="text-xl md:text-2xl font-bold text-center mb-4">Channel List</h1>
+        <div id="channel-list" class="space-y-4"></div>
+        <div id="channel-viewer" class="mt-4 hidden">
+            <iframe id="channel-iframe" class="w-full border-0" src="" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
+        </div>
+        <button id="open-in-browser" class="mt-2 w-full bg-green-500 text-white px-4 py-2 rounded hidden">Open in Browser</button>
+        <button id="back-button" class="mt-4 w-full bg-blue-500 text-white px-4 py-2 rounded hidden">Back to List</button>
+        <div id="error-message" class="text-red-500 text-center mt-2"></div>
+    </div>
+
+    <script>
+        // Ganti dengan URL Netlify Anda
+        const NETLIFY_BASE_URL = "https://gorengan-bawang.netlify.app";
+
+        // Sample channel data
+        const channels = [
+            { id: 'SSC1', name: 'Gorengan Bawang', url: `${NETLIFY_BASE_URL}?id=SSC1` },
+            // Tambahkan channel lain sesuai kebutuhan
+            // { id: 'SSC2', name: 'Channel SSC2', url: `${NETLIFY_BASE_URL}?id=SSC2` },
+        ];
+
+        // DOM elements
+        const channelList = document.getElementById('channel-list');
+        const channelIframe = document.getElementById('channel-iframe');
+        const backButton = document.getElementById('back-button');
+        const openInBrowserButton = document.getElementById('open-in-browser');
+        const channelViewer = document.getElementById('channel-viewer');
+        const errorMessage = document.getElementById('error-message');
+
+        // Initialize Telegram Web App
+        const tg = window.Telegram?.WebApp;
+        if (!tg) {
+            showError('Telegram WebApp SDK failed to load. Please try again.');
+            console.error('Telegram WebApp SDK not available');
+            return;
+        }
+
+        tg.ready();
+        tg.expand();
+
+        // Detect platform
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const isWindowsPhone = /Windows Phone/i.test(navigator.userAgent);
+
+        // Function to post Telegram events
+        function postTelegramEvent(eventType, eventData) {
+            const data = JSON.stringify({ eventType, eventData });
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage(data, 'https://web.telegram.org');
+                    console.log('Posted event to web:', eventType, eventData);
+                }
+                if (window.TelegramWebviewProxy) {
+                    window.TelegramWebviewProxy.postEvent(eventType, JSON.stringify(eventData));
+                    console.log('Posted event to proxy:', eventType, eventData);
+                }
+                if (isWindowsPhone && window.external?.notify) {
+                    window.external.notify(data);
+                    console.log('Posted event to Windows Phone:', eventType, eventData);
+                }
+            } catch (error) {
+                console.error('Failed to post Telegram event:', eventType, error);
+            }
+        }
+
+        // Notify Telegram that iframe is ready (Web only)
+        postTelegramEvent('iframe_ready', { reload_supported: true });
+
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+            console.error('Error displayed:', message);
+        }
+
+        // Hide error message
+        function hideError() {
+            errorMessage.textContent = '';
+            errorMessage.classList.add('hidden');
+        }
+
+        // Populate channel list
+        function renderChannelList() {
+            channelList.innerHTML = '';
+            if (channels.length === 0) {
+                channelList.innerHTML = '<p class="text-center text-gray-500">No channels available</p>';
+                return;
+            }
+
+            channels.forEach(channel => {
+                const channelItem = document.createElement('div');
+                channelItem.className = 'bg-white p-4 rounded shadow cursor-pointer hover:bg-gray-50 touch-manipulation';
+                channelItem.innerHTML = `<h2 class="text-base md:text-lg font-semibold">${channel.name}</h2>`;
+                channelItem.addEventListener('click', () => showChannel(channel.url));
+                channelItem.addEventListener('touchstart', () => showChannel(channel.url), { passive: true });
+                channelList.appendChild(channelItem);
+            });
+        }
+
+        // Show channel in iframe or fallback
+        async function showChannel(url) {
+            try {
+                console.log('Attempting to load channel:', url);
+
+                channelIframe.src = url;
+                channelList.classList.add('hidden');
+                channelViewer.classList.remove('hidden');
+                backButton.classList.remove('hidden');
+                openInBrowserButton.classList.add('hidden');
+                hideError();
+
+                if (isMobile) {
+                    channelIframe.style.height = `${window.innerHeight - 180}px`;
+                    console.log('Adjusted iframe height for mobile:', channelIframe.style.height);
+                }
+
+                postTelegramEvent('web_app_setup_back_button', { is_visible: true });
+            } catch (error) {
+                console.error('Failed to load channel:', error);
+                showError('Failed to load channel content. Opening in browser...');
+                openInBrowserButton.classList.remove('hidden');
+                openInBrowserButton.onclick = () => {
+                    postTelegramEvent('web_app_open_link', { url, try_instant_view: false });
+                };
+                setTimeout(() => {
+                    postTelegramEvent('web_app_open_link', { url, try_instant_view: false });
+                }, 2000);
+            }
+        }
+
+        // Back to channel list
+        function backToList() {
+            channelIframe.src = '';
+            channelList.classList.remove('hidden');
+            channelViewer.classList.add('hidden');
+            backButton.classList.add('hidden');
+            openInBrowserButton.classList.add('hidden');
+            hideError();
+            postTelegramEvent('web_app_setup_back_button', { is_visible: false });
+            console.log('Returned to channel list');
+        }
+
+        // Handle iframe load errors
+        channelIframe.addEventListener('error', () => {
+            console.error('Iframe failed to load, possibly video player error');
+            showError('Failed to load channel content (possibly video player error). Opening in browser...');
+            openInBrowserButton.classList.remove('hidden');
+            openInBrowserButton.onclick = () => {
+                const url = channelIframe.src;
+                postTelegramEvent('web_app_open_link', { url, try_instant_view: false });
+            };
+            setTimeout(() => {
+                postTelegramEvent('web_app_open_link', { url: channelIframe.src, try_instant_view: false });
+            }, 2000);
+        });
+
+        // Handle iframe load success
+        channelIframe.addEventListener('load', () => {
+            if (channelIframe.src) {
+                hideError();
+                channelViewer.classList.remove('hidden');
+                console.log('Iframe loaded successfully:', channelIframe.src);
+            }
+        });
+
+        // Setup back button
+        backButton.addEventListener('click', backToList);
+        backButton.addEventListener('touchstart', backToList, { passive: true });
+
+        // Handle Telegram back button
+        tg.BackButton.onClick(backToList);
+        tg.BackButton.show();
+
+        // Handle window resize for mobile
+        window.addEventListener('resize', () => {
+            if (isMobile && !channelViewer.classList.contains('hidden')) {
+                channelIframe.style.height = `${window.innerHeight - 180}px`;
+                console.log('Resized iframe height:', channelIframe.style.height);
+            }
+        });
+
+        // Initial render
+        try {
+            renderChannelList();
+            postTelegramEvent('web_app_ready', {});
+            console.log('App initialized successfully');
+        } catch (error) {
+            showError('Error initializing app: ' + error.message);
+            console.error('Initialization error:', error);
+        }
+    </script>
+</body>
+</html>
